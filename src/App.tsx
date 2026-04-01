@@ -18,8 +18,8 @@ import VersusMode from './components/VersusMode';
 // ==========================================
 // 1. SUPABASE CONFIGURATION
 // ==========================================
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "https://xtugvvlfxljvkabcddxm.supabase.co";
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh0dWd2dmxmeGxqdmthYmNkZHhtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIzODY2MDMsImV4cCI6MjA4Nzk2MjYwM30.E6mfkZrSRwUbcTKCMDrg5izmDfn7Y1aD-Ij0cFOLuxU";
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 // Geçersiz URL hatasını önlemek için kontrol
 const isConfigured = SUPABASE_URL && SUPABASE_URL.startsWith('http');
@@ -556,6 +556,23 @@ const UserRegistrationModal = ({ onRegister }: { onRegister: (name: string, grad
 };
 
 export default function App() {
+  const [isAccessGranted, setIsAccessGranted] = useState(() => {
+    return localStorage.getItem('nexus_access_granted') === 'true';
+  });
+  const [accessCodeInput, setAccessCodeInput] = useState('');
+  const [accessError, setAccessError] = useState(false);
+
+  const handleAccessSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (accessCodeInput === 'OSMANLI2026') {
+      localStorage.setItem('nexus_access_granted', 'true');
+      setIsAccessGranted(true);
+      setAccessError(false);
+    } else {
+      setAccessError(true);
+    }
+  };
+
   const [view, setView] = useState('home'); 
   const [grade, setGrade] = useState<number | null>(null);
   const [unitId, setUnitId] = useState<number | null>(null);
@@ -1003,6 +1020,38 @@ export default function App() {
       }
     }
   };
+
+  if (!isAccessGranted) {
+    return (
+      <div className="min-h-screen bg-emerald-50 flex items-center justify-center p-4">
+        <div className="bg-white w-full max-w-md rounded-[40px] p-10 border-8 border-emerald-100 shadow-2xl text-center">
+          <div className="w-20 h-20 bg-emerald-100 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-inner rotate-3">
+            <Lock size={40} className="text-emerald-600" />
+          </div>
+          <h2 className="text-3xl font-black text-emerald-900 mb-2 tracking-tighter">Özel Erişim</h2>
+          <p className="text-emerald-600/80 font-bold text-sm mb-8">Bu uygulamaya erişmek için şifre gereklidir.</p>
+          
+          <form onSubmit={handleAccessSubmit} className="space-y-4 text-left">
+            <div>
+              <label className="block text-xs font-black text-emerald-800 uppercase tracking-widest mb-2 ml-2">Erişim Şifresi</label>
+              <input 
+                type="password" 
+                value={accessCodeInput} 
+                onChange={(e) => setAccessCodeInput(e.target.value)} 
+                placeholder="Şifreyi girin"
+                className={`w-full h-14 px-6 rounded-2xl bg-emerald-50 border-2 ${accessError ? 'border-orange-500' : 'border-emerald-100 focus:border-emerald-500'} focus:outline-none font-bold text-emerald-900 placeholder:text-emerald-300 transition-colors`}
+                required
+              />
+              {accessError && <p className="text-orange-500 text-xs font-bold mt-2 ml-2">Hatalı şifre, lütfen tekrar deneyin.</p>}
+            </div>
+            <button type="submit" className="w-full h-16 mt-4 bg-emerald-600 text-white font-black rounded-2xl shadow-xl hover:bg-emerald-700 active:scale-95 transition-all uppercase tracking-widest">
+              Giriş Yap
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-emerald-100 text-gray-800 font-sans selection:bg-emerald-200">
