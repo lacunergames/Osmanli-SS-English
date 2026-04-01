@@ -6,5 +6,3 @@ colorTo: blue
 sdk: docker
 pinned: false
 ---
-
-# Nexus English App
