@@ -12,12 +12,7 @@ RUN npm install
 # Copy the rest of the application code
 COPY . .
 
-# Build the Vite frontend (ARG ile değişkenleri içeri alıyoruz)
-ARG VITE_SUPABASE_URL
-ARG VITE_SUPABASE_ANON_KEY
-ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
-ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
-
+# Build the Vite frontend
 RUN npm run build
 
 # Expose the port Hugging Face Spaces uses
