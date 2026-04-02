@@ -15,19 +15,10 @@ RUN npm install
 # 2. Application Code Layer
 COPY --chown=node:node . .
 
-# 3. Build-time Secrets Injection
-# Hugging Face automatically passes Secrets as build arguments
-ARG VITE_SUPABASE_URL
-ARG VITE_SUPABASE_ANON_KEY
-
-# Map ARG to ENV so Vite can bake them into the static files during build
-ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
-ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
-
-# 4. Build the application
+# 3. Build the application (No secrets needed for frontend anymore)
 RUN npm run build
 
-# 5. Runtime Configuration
+# 4. Runtime Configuration
 ENV PORT=7860
 ENV NODE_ENV=production
 EXPOSE 7860

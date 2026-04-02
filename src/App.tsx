@@ -10,29 +10,14 @@ import {
   Sparkles, BookOpen, Zap, Target, Layout,
   Lock, AlertTriangle, Trash2, Volume2
 } from 'lucide-react';
-import { createClient } from '@supabase/supabase-js';
 import { motion, AnimatePresence } from 'motion/react';
 import { io } from 'socket.io-client';
 import VersusMode from './components/VersusMode';
 
 // ==========================================
-// 1. SUPABASE CONFIGURATION
+// 1. SOCKET CONFIGURATION (Backend Connection)
 // ==========================================
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-// Geçersiz URL hatasını önlemek için kontrol
-const isConfigured = SUPABASE_URL && SUPABASE_URL.startsWith('http');
-const supabase = isConfigured ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
-
-// DEBUG BİLGİSİ (Geçici)
-const debugInfo = {
-  urlExists: !!SUPABASE_URL,
-  urlValue: SUPABASE_URL ? `${SUPABASE_URL.substring(0, 15)}...` : 'YOK',
-  keyExists: !!SUPABASE_KEY,
-  keyLength: SUPABASE_KEY ? SUPABASE_KEY.length : 0,
-  isConfigured: isConfigured
-};
+const socket = io();
 
 // ==========================================
 // 2. HELPER FUNCTIONS
@@ -391,14 +376,6 @@ const LeaderboardModal = ({ grade, onClose }: { grade: number, onClose: any }) =
         }
         return;
       }
-
-      if (!supabase) {
-        if (isMounted) {
-          setErrorMsg("Veritabanı bağlantısı kurulamadı.");
-          setLoading(false);
-        }
-        return;
-      }
       
       const timeoutId = setTimeout(() => {
         console.error('TIMEOUT: Leaderboard sorgusu 5 saniyeyi aştı!');
@@ -412,15 +389,12 @@ const LeaderboardModal = ({ grade, onClose }: { grade: number, onClose: any }) =
       try {
         setLoading(true);
         setErrorMsg(null);
-        console.log('2. Supabase leaderboard sorgusu başlatılıyor...', { grade });
-        const { data, error } = await supabase
-          .from('leaderboards')
-          .select('*')
-          .eq('grade_level', grade)
-          .order('score', { ascending: false })
-          .limit(10);
+        console.log('2. Backend leaderboard sorgusu başlatılıyor...', { grade });
+        
+        const response: any = await socket.emitWithAck('get_leaderboard', { grade });
+        const { data, error } = response;
           
-        console.log('3. Supabase leaderboard yanıtı geldi.', { data, error });
+        console.log('3. Backend leaderboard yanıtı geldi.', { data, error });
 
         if (error) throw error;
         
@@ -652,15 +626,11 @@ export default function App() {
   useEffect(() => {
     let isMounted = true;
     const fetchHomeData = async () => {
-      if (!userGrade || !supabase || view !== 'home') return;
+      if (!userGrade || view !== 'home') return;
       
       try {
-        // Fetch All for accurate ranking
-        const { data: lbData, error: lbError } = await supabase
-          .from('leaderboards')
-          .select('*')
-          .eq('grade_level', userGrade)
-          .order('score', { ascending: false });
+        const response: any = await socket.emitWithAck('get_home_data', { grade: userGrade, username });
+        const { lbData, lbError, vocabData, vocabError } = response;
           
         if (!lbError && lbData && isMounted) {
           setTop3Leaderboard(lbData.slice(0, 3));
@@ -676,12 +646,6 @@ export default function App() {
         }
 
         // Fetch Word of the Day
-        const { data: vocabData, error: vocabError } = await supabase
-          .from('vocabulary_master')
-          .select('*')
-          .eq('grade_level', userGrade)
-          .limit(50);
-          
         if (!vocabError && vocabData && vocabData.length > 0 && isMounted) {
           const today = new Date().toISOString().split('T')[0];
           let seed = 0;
@@ -708,15 +672,11 @@ export default function App() {
   useEffect(() => {
     let isMounted = true;
     const fetchUserScore = async () => {
-      if (!username || !userGrade || !supabase) return;
+      if (!username || !userGrade) return;
       
       try {
-        const { data, error } = await supabase
-          .from('leaderboards')
-          .select('score')
-          .eq('student_name', username)
-          .eq('grade_level', userGrade)
-          .single();
+        const response: any = await socket.emitWithAck('get_user_score', { username, grade: userGrade });
+        const { data, error } = response;
           
         if (error) {
           if (error.code !== 'PGRST116') {
@@ -746,14 +706,10 @@ export default function App() {
       localStorage.setItem('nexus_student_grade', gradeLevel.toString());
       localStorage.setItem('nexus_total_score', '0');
       
-      // 2. Supabase işlemlerini yap (Eğer varsa)
-      if (supabase) {
-        const { data, error } = await supabase
-          .from('leaderboards')
-          .select('score')
-          .eq('student_name', name)
-          .eq('grade_level', gradeLevel)
-          .single();
+      // 2. Backend işlemlerini yap
+      try {
+        const response: any = await socket.emitWithAck('get_user_score', { username: name, grade: gradeLevel });
+        const { data, error } = response;
           
         if (error && error.code !== 'PGRST116') {
           console.error("Kayıt kontrol hatası:", error);
@@ -766,21 +722,17 @@ export default function App() {
           setTotalScore(data.score);
         } else {
           // Insert new user with 0 score
-          const { error: insertError } = await supabase.from('leaderboards').insert([{ 
-            student_name: name, 
-            score: 0, 
-            grade_level: gradeLevel 
-          }]);
-          if (insertError) {
-            console.error("Kullanıcı oluşturma hatası:", insertError);
+          const insertResponse: any = await socket.emitWithAck('update_score', { username: name, grade: gradeLevel, score: 0 });
+          if (insertResponse.error) {
+            console.error("Kullanıcı oluşturma hatası:", insertResponse.error);
           }
           setTotalScore(0);
         }
-      } else {
-        setTotalScore(0);
+      } catch (err) {
+        console.error("Beklenmeyen kayıt hatası:", err);
       }
     } catch (err) {
-      console.error("Beklenmeyen kayıt hatası:", err);
+      console.error("Kayıt işlemi sırasında hata:", err);
     } finally {
       setUsername(name);
       setUserGrade(gradeLevel);
@@ -791,12 +743,8 @@ export default function App() {
 
   const handleResetProfile = async () => {
     try {
-      if (supabase && username && userGrade) {
-        await supabase
-          .from('leaderboards')
-          .delete()
-          .eq('student_name', username)
-          .eq('grade_level', userGrade);
+      if (username && userGrade) {
+        await socket.emitWithAck('delete_profile', { username, grade: userGrade });
       }
     } catch (error) {
       console.error("Profil silinirken hata oluştu:", error);
@@ -861,22 +809,14 @@ export default function App() {
     const safeUnitId = Number(uId);
     const safeWeekId = Number(wId);
 
-    if (!supabase) {
-      setVocabulary([]);
-      setFetchErrorMsg("Veritabanı bağlantısı kurulamadı.");
-      clearTimeout(timeoutId);
-      setLoading(false);
-      return;
-    }
-
     // Adım 2: Basit try-catch-finally bloğu
     try {
-      const { data, error } = await supabase
-        .from('vocabulary_master')
-        .select('*')
-        .eq('grade_level', safeGrade)
-        .eq('unit_no', safeUnitId)
-        .eq('week_no', safeWeekId);
+      const response: any = await socket.emitWithAck('get_vocabulary', { 
+        grade: safeGrade, 
+        unitId: safeUnitId, 
+        weekId: safeWeekId 
+      });
+      const { data, error } = response;
 
       if (error) {
         throw error;
@@ -952,17 +892,13 @@ export default function App() {
       alert(`Oyun Bitti! Hata Sayın: ${errors}, Kazandığın Puan: ${earnedScore}`);
     }
     
-    if (earnedScore > 0 && username && userGrade && supabase) {
+    if (earnedScore > 0 && username && userGrade) {
       localStorage.setItem(activityKey, 'true');
       
       try {
         // Önce veritabanından mevcut puanı çek
-        const { data, error } = await supabase
-          .from('leaderboards')
-          .select('score')
-          .eq('student_name', username)
-          .eq('grade_level', userGrade)
-          .single();
+        const response: any = await socket.emitWithAck('get_user_score', { username, grade: userGrade });
+        const { data, error } = response;
           
         let currentDbScore = 0;
         if (!error && data) {
@@ -974,18 +910,14 @@ export default function App() {
 
         const newTotal = currentDbScore + earnedScore;
         
-        // Supabase'i güncelle
-        const { error: updateError } = await supabase
-          .from('leaderboards')
-          .update({ score: newTotal })
-          .eq('student_name', username)
-          .eq('grade_level', userGrade);
+        // Backend'i güncelle
+        const updateResponse: any = await socket.emitWithAck('update_score', { username, grade: userGrade, score: newTotal });
           
-        if (!updateError) {
+        if (!updateResponse.error) {
           setTotalScore(newTotal);
           localStorage.setItem('nexus_total_score', newTotal.toString());
         } else {
-          console.error("Puan güncellenemedi:", updateError);
+          console.error("Puan güncellenemedi:", updateResponse.error);
         }
       } catch (err) {
         console.error("Puan ekleme sırasında beklenmeyen hata:", err);
@@ -994,14 +926,10 @@ export default function App() {
   };
 
   const handleVersusWin = async (earnedScore: number) => {
-    if (earnedScore > 0 && username && userGrade && supabase) {
+    if (earnedScore > 0 && username && userGrade) {
       try {
-        const { data, error } = await supabase
-          .from('leaderboards')
-          .select('score')
-          .eq('student_name', username)
-          .eq('grade_level', userGrade)
-          .single();
+        const response: any = await socket.emitWithAck('get_user_score', { username, grade: userGrade });
+        const { data, error } = response;
           
         let currentDbScore = 0;
         if (!error && data) {
@@ -1013,17 +941,13 @@ export default function App() {
 
         const newTotal = currentDbScore + earnedScore;
         
-        const { error: updateError } = await supabase
-          .from('leaderboards')
-          .update({ score: newTotal })
-          .eq('student_name', username)
-          .eq('grade_level', userGrade);
+        const updateResponse: any = await socket.emitWithAck('update_score', { username, grade: userGrade, score: newTotal });
           
-        if (!updateError) {
+        if (!updateResponse.error) {
           setTotalScore(newTotal);
           localStorage.setItem('nexus_total_score', newTotal.toString());
         } else {
-          console.error("Puan güncellenemedi:", updateError);
+          console.error("Puan güncellenemedi:", updateResponse.error);
         }
       } catch (err) {
         console.error("Puan ekleme sırasında beklenmeyen hata:", err);
@@ -1034,14 +958,6 @@ export default function App() {
   if (!isAccessGranted) {
     return (
       <div className="min-h-screen bg-emerald-50 flex flex-col items-center justify-center p-4">
-        {/* GEÇİCİ DEBUG EKRANI */}
-        <div className="bg-red-600 text-white p-2 text-xs font-mono break-all z-50 w-full max-w-md mb-4 rounded-lg shadow-lg">
-          <strong>SİSTEM TEŞHİS EKRANI:</strong><br/>
-          URL Var mı?: {debugInfo.urlExists ? 'EVET' : 'HAYIR'} ({debugInfo.urlValue})<br/>
-          KEY Var mı?: {debugInfo.keyExists ? 'EVET' : 'HAYIR'} (Uzunluk: {debugInfo.keyLength})<br/>
-          Bağlantı Hazır mı?: {debugInfo.isConfigured ? 'EVET' : 'HAYIR'}
-        </div>
-
         <div className="bg-white w-full max-w-md rounded-[40px] p-10 border-8 border-emerald-100 shadow-2xl text-center">
           <div className="w-20 h-20 bg-emerald-100 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-inner rotate-3">
             <Lock size={40} className="text-emerald-600" />
@@ -1074,14 +990,6 @@ export default function App() {
   return (
     <div className="min-h-screen bg-emerald-100 text-gray-800 font-sans selection:bg-emerald-200">
       <div className="fixed inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.4)_0%,transparent_50%)] pointer-events-none"></div>
-      
-      {/* GEÇİCİ DEBUG EKRANI */}
-      <div className="bg-red-600 text-white p-2 text-xs font-mono break-all z-50 relative">
-        <strong>SİSTEM TEŞHİS EKRANI:</strong><br/>
-        URL Var mı?: {debugInfo.urlExists ? 'EVET' : 'HAYIR'} ({debugInfo.urlValue})<br/>
-        KEY Var mı?: {debugInfo.keyExists ? 'EVET' : 'HAYIR'} (Uzunluk: {debugInfo.keyLength})<br/>
-        Bağlantı Hazır mı?: {debugInfo.isConfigured ? 'EVET' : 'HAYIR'}
-      </div>
 
       {showRegistration && <UserRegistrationModal onRegister={handleRegister} />}
       {showLB && <LeaderboardModal grade={showLB} onClose={() => setShowLB(null)} />}

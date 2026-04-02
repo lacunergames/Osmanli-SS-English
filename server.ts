@@ -6,16 +6,17 @@ import { createClient } from '@supabase/supabase-js';
 import path from 'path';
 import 'dotenv/config';
 
-// Initialize Supabase safely
-let supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://xtugvvlfxljvkabcddxm.supabase.co';
+// Initialize Supabase safely (Read directly from server environment variables)
+let supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://xtugvvlfxljvkabcddxm.supabase.co';
 if (!supabaseUrl.startsWith('http')) {
   supabaseUrl = 'https://' + supabaseUrl;
 }
-const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh0dWd2dmxmeGxqdmthYmNkZHhtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIzODY2MDMsImV4cCI6MjA4Nzk2MjYwM30.E6mfkZrSRwUbcTKCMDrg5izmDfn7Y1aD-Ij0cFOLuxU';
+const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh0dWd2dmxmeGxqdmthYmNkZHhtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIzODY2MDMsImV4cCI6MjA4Nzk2MjYwM30.E6mfkZrSRwUbcTKCMDrg5izmDfn7Y1aD-Ij0cFOLuxU';
 
 let supabase: any = null;
 try {
   supabase = createClient(supabaseUrl, supabaseKey);
+  console.log('Supabase client initialized on server.');
 } catch (e) {
   console.error('Failed to initialize Supabase client:', e);
 }
@@ -39,6 +40,100 @@ async function startServer() {
 
   io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
+
+    // ==========================================
+    // DATABASE OPERATIONS (Frontend -> Backend)
+    // ==========================================
+
+    socket.on('get_leaderboard', async ({ grade }, callback) => {
+      if (!supabase) return callback({ error: 'Database not initialized' });
+      const { data, error } = await supabase
+        .from('leaderboards')
+        .select('*')
+        .eq('grade_level', grade)
+        .order('score', { ascending: false })
+        .limit(10);
+      callback({ data, error });
+    });
+
+    socket.on('get_home_data', async ({ grade, username }, callback) => {
+      if (!supabase) return callback({ error: 'Database not initialized' });
+      
+      const { data: lbData, error: lbError } = await supabase
+        .from('leaderboards')
+        .select('*')
+        .eq('grade_level', grade)
+        .order('score', { ascending: false });
+
+      const { data: vocabData, error: vocabError } = await supabase
+        .from('vocabulary_master')
+        .select('*')
+        .eq('grade_level', grade)
+        .limit(50);
+
+      callback({ lbData, lbError, vocabData, vocabError });
+    });
+
+    socket.on('get_user_score', async ({ username, grade }, callback) => {
+      if (!supabase) return callback({ error: 'Database not initialized' });
+      const { data, error } = await supabase
+        .from('leaderboards')
+        .select('score')
+        .eq('student_name', username)
+        .eq('grade_level', grade)
+        .single();
+      callback({ data, error });
+    });
+
+    socket.on('update_score', async ({ username, grade, score }, callback) => {
+      if (!supabase) return callback({ error: 'Database not initialized' });
+      
+      const { data: existing } = await supabase
+        .from('leaderboards')
+        .select('score')
+        .eq('student_name', username)
+        .eq('grade_level', grade)
+        .single();
+
+      if (existing) {
+        const { data, error } = await supabase
+          .from('leaderboards')
+          .update({ score })
+          .eq('student_name', username)
+          .eq('grade_level', grade);
+        callback({ data, error });
+      } else {
+        const { data, error } = await supabase
+          .from('leaderboards')
+          .insert([{ student_name: username, grade_level: grade, score }]);
+        callback({ data, error });
+      }
+    });
+
+    socket.on('get_vocabulary', async ({ grade, unitId, weekId }, callback) => {
+      if (!supabase) return callback({ error: 'Database not initialized' });
+      const { data, error } = await supabase
+        .from('vocabulary_master')
+        .select('*')
+        .eq('grade_level', grade)
+        .eq('unit_no', unitId)
+        .eq('week_no', weekId);
+      callback({ data, error });
+    });
+
+    socket.on('delete_profile', async ({ username, grade }, callback) => {
+      if (!supabase) return callback({ error: 'Database not initialized' });
+      const { data, error } = await supabase
+        .from('leaderboards')
+        .delete()
+        .eq('student_name', username)
+        .eq('grade_level', grade);
+      callback({ data, error });
+    });
+
+    // ==========================================
+    // VERSUS MODE OPERATIONS
+    // ==========================================
 
     socket.on('join_queue', async ({ name, grade }) => {
       console.log(`User ${name} (Grade ${grade}) joined queue.`);
