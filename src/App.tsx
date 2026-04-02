@@ -25,6 +25,15 @@ const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 const isConfigured = SUPABASE_URL && SUPABASE_URL.startsWith('http');
 const supabase = isConfigured ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
+// DEBUG BİLGİSİ (Geçici)
+const debugInfo = {
+  urlExists: !!SUPABASE_URL,
+  urlValue: SUPABASE_URL ? `${SUPABASE_URL.substring(0, 15)}...` : 'YOK',
+  keyExists: !!SUPABASE_KEY,
+  keyLength: SUPABASE_KEY ? SUPABASE_KEY.length : 0,
+  isConfigured: isConfigured
+};
+
 // ==========================================
 // 2. HELPER FUNCTIONS
 // ==========================================
@@ -582,6 +591,7 @@ export default function App() {
   const [showLB, setShowLB] = useState<number | null>(null); 
   const [showGuardModal, setShowGuardModal] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
+  const [showDebug, setShowDebug] = useState(false); // DEBUG TOGGLE
   
   // User State
   const [username, setUsername] = useState(() => {
@@ -1057,6 +1067,14 @@ export default function App() {
     <div className="min-h-screen bg-emerald-100 text-gray-800 font-sans selection:bg-emerald-200">
       <div className="fixed inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(255,255,255,0.4)_0%,transparent_50%)] pointer-events-none"></div>
       
+      {/* GEÇİCİ DEBUG EKRANI */}
+      <div className="bg-red-600 text-white p-2 text-xs font-mono break-all z-50 relative">
+        <strong>SİSTEM TEŞHİS EKRANI:</strong><br/>
+        URL Var mı?: {debugInfo.urlExists ? 'EVET' : 'HAYIR'} ({debugInfo.urlValue})<br/>
+        KEY Var mı?: {debugInfo.keyExists ? 'EVET' : 'HAYIR'} (Uzunluk: {debugInfo.keyLength})<br/>
+        Bağlantı Hazır mı?: {debugInfo.isConfigured ? 'EVET' : 'HAYIR'}
+      </div>
+
       {showRegistration && <UserRegistrationModal onRegister={handleRegister} />}
       {showLB && <LeaderboardModal grade={showLB} onClose={() => setShowLB(null)} />}
 
