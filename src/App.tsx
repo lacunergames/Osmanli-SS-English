@@ -1033,7 +1033,15 @@ export default function App() {
 
   if (!isAccessGranted) {
     return (
-      <div className="min-h-screen bg-emerald-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-emerald-50 flex flex-col items-center justify-center p-4">
+        {/* GEÇİCİ DEBUG EKRANI */}
+        <div className="bg-red-600 text-white p-2 text-xs font-mono break-all z-50 w-full max-w-md mb-4 rounded-lg shadow-lg">
+          <strong>SİSTEM TEŞHİS EKRANI:</strong><br/>
+          URL Var mı?: {debugInfo.urlExists ? 'EVET' : 'HAYIR'} ({debugInfo.urlValue})<br/>
+          KEY Var mı?: {debugInfo.keyExists ? 'EVET' : 'HAYIR'} (Uzunluk: {debugInfo.keyLength})<br/>
+          Bağlantı Hazır mı?: {debugInfo.isConfigured ? 'EVET' : 'HAYIR'}
+        </div>
+
         <div className="bg-white w-full max-w-md rounded-[40px] p-10 border-8 border-emerald-100 shadow-2xl text-center">
           <div className="w-20 h-20 bg-emerald-100 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-inner rotate-3">
             <Lock size={40} className="text-emerald-600" />
