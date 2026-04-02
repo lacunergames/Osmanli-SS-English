@@ -6,10 +6,19 @@ import { createClient } from '@supabase/supabase-js';
 import path from 'path';
 import 'dotenv/config';
 
-// Initialize Supabase
-const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://xtugvvlfxljvkabcddxm.supabase.co';
+// Initialize Supabase safely
+let supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://xtugvvlfxljvkabcddxm.supabase.co';
+if (!supabaseUrl.startsWith('http')) {
+  supabaseUrl = 'https://' + supabaseUrl;
+}
 const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh0dWd2dmxmeGxqdmthYmNkZHhtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIzODY2MDMsImV4cCI6MjA4Nzk2MjYwM30.E6mfkZrSRwUbcTKCMDrg5izmDfn7Y1aD-Ij0cFOLuxU';
-const supabase = createClient(supabaseUrl, supabaseKey);
+
+let supabase: any = null;
+try {
+  supabase = createClient(supabaseUrl, supabaseKey);
+} catch (e) {
+  console.error('Failed to initialize Supabase client:', e);
+}
 
 async function startServer() {
   const app = express();
