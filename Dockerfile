@@ -1,26 +1,35 @@
 FROM node:20-alpine
 
-# Set working directory
+# Hugging Face Spaces requires containers to run as a non-root user (uid 1000)
+# The 'node' user built into the alpine image has uid 1000
 WORKDIR /app
+RUN chown node:node /app
 
-# Copy package.json and package-lock.json (if available)
-COPY package*.json ./
+# Switch to non-root user for security and HF compliance
+USER node
 
-# Install dependencies
+# 1. Dependency Layer (Cache-friendly)
+COPY --chown=node:node package*.json ./
 RUN npm install
 
-# Copy the rest of the application code
-COPY . .
+# 2. Application Code Layer
+COPY --chown=node:node . .
 
-# Build the Vite frontend
+# 3. Build-time Secrets Injection
+# Hugging Face automatically passes Secrets as build arguments
+ARG VITE_SUPABASE_URL
+ARG VITE_SUPABASE_ANON_KEY
+
+# Map ARG to ENV so Vite can bake them into the static files during build
+ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
+ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
+
+# 4. Build the application
 RUN npm run build
 
-# Expose the port Hugging Face Spaces uses
-EXPOSE 7860
-
-# Set environment variables
+# 5. Runtime Configuration
 ENV PORT=7860
 ENV NODE_ENV=production
+EXPOSE 7860
 
-# Start the server using the start script
 CMD ["npm", "start"]
