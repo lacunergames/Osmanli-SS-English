@@ -78,19 +78,19 @@ export default function VersusMode({ username, grade, onBack, onWin }: VersusMod
       addFloatingEmoji(emoji, false);
     });
 
-    newSocket.on('round_result', (data) => {
+    newSocket.on('round_result', (data: any) => {
       setRoundResult(data);
       setScores({
         me: data.players[newSocket.id].score,
-        opponent: Object.entries(data.players).find(([id]) => id !== newSocket.id)?.[1]?.score || 0
+        opponent: (Object.entries(data.players).find(([id]) => id !== newSocket.id)?.[1] as any)?.score || 0
       });
       setMyStreak(data.players[newSocket.id].streak || 0);
     });
 
-    newSocket.on('game_over', (data) => {
+    newSocket.on('game_over', (data: any) => {
       setGameState('game_over');
       const myScore = data.players[newSocket.id].score;
-      const oppScore = Object.entries(data.players).find(([id]) => id !== newSocket.id)?.[1]?.score || 0;
+      const oppScore = (Object.entries(data.players).find(([id]) => id !== newSocket.id)?.[1] as any)?.score || 0;
       setScores({
         me: myScore,
         opponent: oppScore

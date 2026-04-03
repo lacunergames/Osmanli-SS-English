@@ -7,18 +7,32 @@ import path from 'path';
 import 'dotenv/config';
 
 // Initialize Supabase safely (Read directly from server environment variables)
-let supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || 'https://xtugvvlfxljvkabcddxm.supabase.co';
-if (!supabaseUrl.startsWith('http')) {
-  supabaseUrl = 'https://' + supabaseUrl;
-}
-const supabaseKey = process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh0dWd2dmxmeGxqdmthYmNkZHhtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIzODY2MDMsImV4cCI6MjA4Nzk2MjYwM30.E6mfkZrSRwUbcTKCMDrg5izmDfn7Y1aD-Ij0cFOLuxU';
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+// Use the powerful Service Role Key for backend operations to bypass RLS, fallback to anon key for preview
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 
 let supabase: any = null;
-try {
-  supabase = createClient(supabaseUrl, supabaseKey);
-  console.log('Supabase client initialized on server.');
-} catch (e) {
-  console.error('Failed to initialize Supabase client:', e);
+
+if (!supabaseUrl || !supabaseKey) {
+  console.error('CRITICAL ERROR: Supabase URL or Key is missing from environment variables!');
+  console.error('Please check your Hugging Face Secrets and ensure SUPABASE_SERVICE_ROLE_KEY is set.');
+} else {
+  let formattedUrl = supabaseUrl;
+  if (!formattedUrl.startsWith('http')) {
+    formattedUrl = 'https://' + formattedUrl;
+  }
+  
+  try {
+    supabase = createClient(formattedUrl, supabaseKey);
+    console.log(`Supabase client initialized successfully with URL: ${formattedUrl.substring(0, 15)}...`);
+    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      console.log('SUCCESS: Using SERVICE ROLE KEY. RLS policies will be bypassed.');
+    } else {
+      console.warn('WARNING: Using ANON KEY instead of SERVICE ROLE KEY. RLS policies might block operations. Please set SUPABASE_SERVICE_ROLE_KEY in Hugging Face Secrets.');
+    }
+  } catch (e) {
+    console.error('Failed to initialize Supabase client:', e);
+  }
 }
 
 async function startServer() {
@@ -38,6 +52,47 @@ async function startServer() {
   const queues: Record<number, any[]> = { 5: [], 6: [], 7: [], 8: [], 9: [] };
   const activeGames: Record<string, any> = {};
 
+  async function getLeagueSettings() {
+    if (!supabase) return { period: 1, startTime: Date.now() };
+    
+    const { data, error } = await supabase
+      .from('leaderboards')
+      .select('league_period, last_activity_date')
+      .eq('student_name', '__SYSTEM__')
+      .eq('grade_level', '0')
+      .single();
+
+    const PERIOD_DURATION = 20 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+
+    if (data) {
+      let period = data.league_period || 1;
+      let startTime = parseInt(data.last_activity_date || '0', 10);
+      
+      if (now - startTime >= PERIOD_DURATION) {
+        period += 1;
+        startTime = now;
+        await supabase
+          .from('leaderboards')
+          .update({ league_period: period, last_activity_date: startTime.toString() })
+          .eq('student_name', '__SYSTEM__')
+          .eq('grade_level', '0');
+      }
+      return { period, startTime };
+    } else {
+      await supabase
+        .from('leaderboards')
+        .insert([{ 
+          student_name: '__SYSTEM__', 
+          grade_level: '0', 
+          score: 0, 
+          last_activity_date: now.toString(),
+          league_period: 1 
+        }]);
+      return { period: 1, startTime: now };
+    }
+  }
+
   io.on('connection', (socket) => {
     console.log('User connected:', socket.id);
 
@@ -47,10 +102,12 @@ async function startServer() {
 
     socket.on('get_leaderboard', async ({ grade }, callback) => {
       if (!supabase) return callback({ error: 'Database not initialized' });
+      const { period } = await getLeagueSettings();
       const { data, error } = await supabase
         .from('leaderboards')
         .select('*')
         .eq('grade_level', grade)
+        .eq('league_period', period)
         .order('score', { ascending: false })
         .limit(10);
       callback({ data, error });
@@ -59,10 +116,12 @@ async function startServer() {
     socket.on('get_home_data', async ({ grade, username }, callback) => {
       if (!supabase) return callback({ error: 'Database not initialized' });
       
+      const { period, startTime } = await getLeagueSettings();
       const { data: lbData, error: lbError } = await supabase
         .from('leaderboards')
         .select('*')
         .eq('grade_level', grade)
+        .eq('league_period', period)
         .order('score', { ascending: false });
 
       const { data: vocabData, error: vocabError } = await supabase
@@ -71,23 +130,32 @@ async function startServer() {
         .eq('grade_level', grade)
         .limit(50);
 
-      callback({ lbData, lbError, vocabData, vocabError });
+      callback({ lbData, lbError, vocabData, vocabError, leagueStartTime: startTime, currentPeriod: period });
     });
 
     socket.on('get_user_score', async ({ username, grade }, callback) => {
       if (!supabase) return callback({ error: 'Database not initialized' });
       const { data, error } = await supabase
         .from('leaderboards')
-        .select('score')
+        .select('score, streak, last_activity_date, league_period')
         .eq('student_name', username)
         .eq('grade_level', grade)
         .single();
+        
+      if (data) {
+        const { period } = await getLeagueSettings();
+        if (data.league_period !== period) {
+          data.score = 0;
+        }
+      }
       callback({ data, error });
     });
 
-    socket.on('update_score', async ({ username, grade, score }, callback) => {
+    socket.on('update_score', async ({ username, grade, score, streak, last_activity_date }, callback) => {
       if (!supabase) return callback({ error: 'Database not initialized' });
       
+      const { period } = await getLeagueSettings();
+
       const { data: existing } = await supabase
         .from('leaderboards')
         .select('score')
@@ -95,17 +163,21 @@ async function startServer() {
         .eq('grade_level', grade)
         .single();
 
+      const updateData: any = { score, league_period: period };
+      if (streak !== undefined) updateData.streak = streak;
+      if (last_activity_date !== undefined) updateData.last_activity_date = last_activity_date;
+
       if (existing) {
         const { data, error } = await supabase
           .from('leaderboards')
-          .update({ score })
+          .update(updateData)
           .eq('student_name', username)
           .eq('grade_level', grade);
         callback({ data, error });
       } else {
         const { data, error } = await supabase
           .from('leaderboards')
-          .insert([{ student_name: username, grade_level: grade, score }]);
+          .insert([{ student_name: username, grade_level: grade, ...updateData }]);
         callback({ data, error });
       }
     });
@@ -128,6 +200,43 @@ async function startServer() {
         .delete()
         .eq('student_name', username)
         .eq('grade_level', grade);
+      callback({ data, error });
+    });
+
+    socket.on('admin_reset_league', async (callback) => {
+      if (!supabase) return callback({ error: 'Database not initialized' });
+      const { period } = await getLeagueSettings();
+      const newPeriod = period + 1;
+      const newStartTime = Date.now();
+      
+      const { error } = await supabase
+        .from('leaderboards')
+        .update({ league_period: newPeriod, last_activity_date: newStartTime.toString() })
+        .eq('student_name', '__SYSTEM__')
+        .eq('grade_level', '0');
+        
+      if (error) {
+        return callback({ error });
+      }
+      
+      io.emit('league_reset', { startTime: newStartTime, period: newPeriod });
+      callback({ success: true, startTime: newStartTime });
+    });
+
+    socket.on('get_previous_winner', async ({ grade, period }, callback) => {
+      if (!supabase) return callback({ error: 'Database not initialized' });
+      const targetPeriod = period - 1;
+      if (targetPeriod < 1) return callback({ data: null });
+      
+      const { data, error } = await supabase
+        .from('leaderboards')
+        .select('student_name, score')
+        .eq('grade_level', grade)
+        .eq('league_period', targetPeriod)
+        .order('score', { ascending: false })
+        .limit(1)
+        .single();
+        
       callback({ data, error });
     });
 

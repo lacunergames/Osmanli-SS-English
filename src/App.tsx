@@ -8,7 +8,7 @@ import {
   ChevronRight, ArrowLeft, Trophy,
   GraduationCap, Award, Library, X, Loader2,
   Sparkles, BookOpen, Zap, Target, Layout,
-  Lock, AlertTriangle, Trash2, Volume2
+  Lock, AlertTriangle, Trash2, Volume2, Flame, Timer
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { io } from 'socket.io-client';
@@ -565,7 +565,6 @@ export default function App() {
   const [showLB, setShowLB] = useState<number | null>(null); 
   const [showGuardModal, setShowGuardModal] = useState(false);
   const [showResetModal, setShowResetModal] = useState(false);
-  const [showDebug, setShowDebug] = useState(false); // DEBUG TOGGLE
   
   // User State
   const [username, setUsername] = useState(() => {
@@ -622,6 +621,101 @@ export default function App() {
   const [top3Leaderboard, setTop3Leaderboard] = useState<any[]>([]);
   const [currentUserRank, setCurrentUserRank] = useState<any>(null);
 
+  const [streak, setStreak] = useState<number>(() => {
+    const s = localStorage.getItem('nexus_streak');
+    return s ? parseInt(s, 10) : 0;
+  });
+  const [streakPopup, setStreakPopup] = useState<{ streak: number, bonus: number } | null>(null);
+  const [winnerPopup, setWinnerPopup] = useState<{ name: string, score: number, period: number } | null>(null);
+  const [currentLeaguePeriod, setCurrentLeaguePeriod] = useState<number>(1);
+  const [leagueTimeRemaining, setLeagueTimeRemaining] = useState<string>('');
+  const [leagueStartTime, setLeagueStartTime] = useState<number>(Date.now());
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [adminPassword, setAdminPassword] = useState('');
+
+  const checkPreviousWinner = (period: number, grade: string) => {
+    if (period <= 1) return;
+    const lastSeen = parseInt(localStorage.getItem('nexus_last_seen_winner_period') || '0', 10);
+    if (lastSeen < period) {
+      socket.emit('get_previous_winner', { grade, period }, (res: any) => {
+        if (res.data) {
+          setWinnerPopup({ name: res.data.student_name, score: res.data.score, period });
+        } else {
+          localStorage.setItem('nexus_last_seen_winner_period', period.toString());
+        }
+      });
+    }
+  };
+
+  const closeWinnerPopup = () => {
+    if (winnerPopup) {
+      localStorage.setItem('nexus_last_seen_winner_period', winnerPopup.period.toString());
+      setWinnerPopup(null);
+    }
+  };
+
+  useEffect(() => {
+    const PERIOD_DURATION = 20 * 24 * 60 * 60 * 1000;
+
+    const updateTimer = () => {
+      const now = Date.now();
+      const nextResetTime = leagueStartTime + PERIOD_DURATION;
+      const diff = nextResetTime - now;
+
+      if (diff <= 0) {
+        setLeagueTimeRemaining('Sıfırlanıyor...');
+        return;
+      }
+
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+
+      setLeagueTimeRemaining(`${days}g ${hours}s ${minutes}d`);
+    };
+
+    updateTimer();
+    const interval = setInterval(updateTimer, 60000);
+    return () => clearInterval(interval);
+  }, [leagueStartTime]);
+
+  useEffect(() => {
+    socket.on('league_reset', (data) => {
+      setLeagueStartTime(data.startTime);
+      if (data.period) {
+        setCurrentLeaguePeriod(data.period);
+        if (userGrade) {
+          checkPreviousWinner(data.period, userGrade);
+        }
+      }
+      if (userGrade && username) {
+        socket.emit('get_home_data', { grade: userGrade, username }, (res: any) => {
+          if (res.lbData) setTop3Leaderboard(res.lbData.slice(0, 3));
+        });
+      }
+    });
+    return () => {
+      socket.off('league_reset');
+    };
+  }, [userGrade, username]);
+
+  useEffect(() => {
+    const lastDateStr = localStorage.getItem('nexus_last_activity_date');
+    if (lastDateStr) {
+      const lastDate = new Date(lastDateStr);
+      const today = new Date();
+      lastDate.setHours(0, 0, 0, 0);
+      today.setHours(0, 0, 0, 0);
+      const diffTime = today.getTime() - lastDate.getTime();
+      const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+      
+      if (diffDays > 1) {
+        localStorage.setItem('nexus_streak', '0');
+        setStreak(0);
+      }
+    }
+  }, []);
+
   // Fetch Word of the Day and Top 3 Leaderboard
   useEffect(() => {
     let isMounted = true;
@@ -630,7 +724,13 @@ export default function App() {
       
       try {
         const response: any = await socket.emitWithAck('get_home_data', { grade: userGrade, username });
-        const { lbData, lbError, vocabData, vocabError } = response;
+        const { lbData, lbError, vocabData, vocabError, leagueStartTime: serverStartTime, currentPeriod } = response;
+        
+        if (serverStartTime) setLeagueStartTime(serverStartTime);
+        if (currentPeriod) {
+          setCurrentLeaguePeriod(currentPeriod);
+          checkPreviousWinner(currentPeriod, userGrade);
+        }
           
         if (!lbError && lbData && isMounted) {
           setTop3Leaderboard(lbData.slice(0, 3));
@@ -688,6 +788,14 @@ export default function App() {
         if (data && isMounted) {
           setTotalScore(data.score);
           localStorage.setItem('nexus_total_score', data.score.toString());
+          
+          if (data.streak !== undefined) {
+            setStreak(data.streak);
+            localStorage.setItem('nexus_streak', data.streak.toString());
+          }
+          if (data.last_activity_date) {
+            localStorage.setItem('nexus_last_activity_date', data.last_activity_date);
+          }
         }
       } catch (err) {
         console.error("Unexpected error fetching score:", err);
@@ -720,9 +828,17 @@ export default function App() {
           localStorage.setItem('nexus_user_profile', JSON.stringify(updatedProfile));
           localStorage.setItem('nexus_total_score', data.score.toString());
           setTotalScore(data.score);
+
+          if (data.streak !== undefined) {
+            setStreak(data.streak);
+            localStorage.setItem('nexus_streak', data.streak.toString());
+          }
+          if (data.last_activity_date) {
+            localStorage.setItem('nexus_last_activity_date', data.last_activity_date);
+          }
         } else {
           // Insert new user with 0 score
-          const insertResponse: any = await socket.emitWithAck('update_score', { username: name, grade: gradeLevel, score: 0 });
+          const insertResponse: any = await socket.emitWithAck('update_score', { username: name, grade: gradeLevel, score: 0, streak: 0, last_activity_date: null });
           if (insertResponse.error) {
             console.error("Kullanıcı oluşturma hatası:", insertResponse.error);
           }
@@ -885,14 +1001,52 @@ export default function App() {
     }
 
     // 3. Puan Ekleme ve Kaydetme
-    setActivityResult({ errors, total: correct, score: earnedScore, limited: false });
+    let currentStreak = parseInt(localStorage.getItem('nexus_streak') || '0', 10);
+    const lastDateStr = localStorage.getItem('nexus_last_activity_date');
+    let streakBonus = 0;
+
+    if (lastDateStr !== today) {
+      let diffDays = 0;
+      if (lastDateStr) {
+        const lastDate = new Date(lastDateStr);
+        const todayDate = new Date(today);
+        lastDate.setHours(0, 0, 0, 0);
+        todayDate.setHours(0, 0, 0, 0);
+        const diffTime = todayDate.getTime() - lastDate.getTime();
+        diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+        
+        if (diffDays === 1) {
+          currentStreak += 1;
+        } else if (diffDays > 1) {
+          currentStreak = 1;
+        }
+      } else {
+        currentStreak = 1;
+      }
+      
+      localStorage.setItem('nexus_last_activity_date', today);
+      localStorage.setItem('nexus_streak', currentStreak.toString());
+      setStreak(currentStreak);
+
+      // Check for 5-day milestone
+      if (currentStreak > 0 && currentStreak % 5 === 0) {
+        streakBonus = 50;
+        setStreakPopup({ streak: currentStreak, bonus: 50 });
+      } else if (diffDays === 1 || !lastDateStr) {
+        setStreakPopup({ streak: currentStreak, bonus: 0 });
+      }
+    }
+
+    const finalEarnedScore = earnedScore + streakBonus;
+
+    setActivityResult({ errors, total: correct, score: finalEarnedScore, limited: false });
     
     // Kullanıcıya bilgi ver
-    if (activeMode !== 'flashcards') {
-      alert(`Oyun Bitti! Hata Sayın: ${errors}, Kazandığın Puan: ${earnedScore}`);
+    if (activeMode !== 'flashcards' && !streakPopup) {
+      // alert(`Oyun Bitti! Hata Sayın: ${errors}, Kazandığın Puan: ${earnedScore}${streakBonus > 0 ? ` (+${streakBonus} Seri Bonusu)` : ''}`);
     }
     
-    if (earnedScore > 0 && username && userGrade) {
+    if (finalEarnedScore > 0 && username && userGrade) {
       localStorage.setItem(activityKey, 'true');
       
       try {
@@ -908,10 +1062,16 @@ export default function App() {
           return; // Hata varsa güncelleme yapma
         }
 
-        const newTotal = currentDbScore + earnedScore;
+        const newTotal = currentDbScore + finalEarnedScore;
         
         // Backend'i güncelle
-        const updateResponse: any = await socket.emitWithAck('update_score', { username, grade: userGrade, score: newTotal });
+        const updateResponse: any = await socket.emitWithAck('update_score', { 
+          username, 
+          grade: userGrade, 
+          score: newTotal,
+          streak: currentStreak,
+          last_activity_date: today
+        });
           
         if (!updateResponse.error) {
           setTotalScore(newTotal);
@@ -927,6 +1087,46 @@ export default function App() {
 
   const handleVersusWin = async (earnedScore: number) => {
     if (earnedScore > 0 && username && userGrade) {
+      // Streak Logic
+      const today = new Date().toISOString().split('T')[0];
+      let currentStreak = parseInt(localStorage.getItem('nexus_streak') || '0', 10);
+      const lastDateStr = localStorage.getItem('nexus_last_activity_date');
+      let streakBonus = 0;
+
+      if (lastDateStr !== today) {
+        let diffDays = 0;
+        if (lastDateStr) {
+          const lastDate = new Date(lastDateStr);
+          const todayDate = new Date(today);
+          lastDate.setHours(0, 0, 0, 0);
+          todayDate.setHours(0, 0, 0, 0);
+          const diffTime = todayDate.getTime() - lastDate.getTime();
+          diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+          
+          if (diffDays === 1) {
+            currentStreak += 1;
+          } else if (diffDays > 1) {
+            currentStreak = 1;
+          }
+        } else {
+          currentStreak = 1;
+        }
+        
+        localStorage.setItem('nexus_last_activity_date', today);
+        localStorage.setItem('nexus_streak', currentStreak.toString());
+        setStreak(currentStreak);
+
+        // Check for 5-day milestone
+        if (currentStreak > 0 && currentStreak % 5 === 0) {
+          streakBonus = 50;
+          setStreakPopup({ streak: currentStreak, bonus: 50 });
+        } else if (diffDays === 1 || !lastDateStr) {
+          setStreakPopup({ streak: currentStreak, bonus: 0 });
+        }
+      }
+
+      const finalEarnedScore = earnedScore + streakBonus;
+
       try {
         const response: any = await socket.emitWithAck('get_user_score', { username, grade: userGrade });
         const { data, error } = response;
@@ -939,9 +1139,15 @@ export default function App() {
           return;
         }
 
-        const newTotal = currentDbScore + earnedScore;
+        const newTotal = currentDbScore + finalEarnedScore;
         
-        const updateResponse: any = await socket.emitWithAck('update_score', { username, grade: userGrade, score: newTotal });
+        const updateResponse: any = await socket.emitWithAck('update_score', { 
+          username, 
+          grade: userGrade, 
+          score: newTotal,
+          streak: currentStreak,
+          last_activity_date: today
+        });
           
         if (!updateResponse.error) {
           setTotalScore(newTotal);
@@ -1023,12 +1229,101 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      <AnimatePresence>
+        {streakPopup && (
+          <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div initial={{ scale: 0.5, opacity: 0, rotate: -10 }} animate={{ scale: 1, opacity: 1, rotate: 0 }} exit={{ scale: 0.5, opacity: 0, rotate: 10 }} className="bg-white w-full max-w-sm rounded-[40px] p-8 border-8 border-amber-100 shadow-2xl text-center relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_50%_0%,rgba(251,191,36,0.2)_0%,transparent_70%)] pointer-events-none"></div>
+              <div className="w-24 h-24 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner relative z-10">
+                <Flame size={56} className="text-amber-500 animate-pulse" />
+              </div>
+              <h2 className="text-3xl font-black text-amber-900 mb-2 relative z-10">{streakPopup.streak} Günlük Seri!</h2>
+              <p className="text-amber-700 font-bold mb-6 relative z-10">
+                Harika gidiyorsun! Her gün girerek serini koru.
+                {streakPopup.bonus > 0 && <span className="block mt-2 text-orange-600 font-black text-lg">+{streakPopup.bonus} XP Bonus Kazandın!</span>}
+              </p>
+              <button onClick={() => setStreakPopup(null)} className="w-full h-14 bg-amber-500 text-white font-black rounded-2xl shadow-lg hover:bg-amber-600 transition-all relative z-10 uppercase tracking-widest">
+                Devam Et
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showAdminModal && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            <motion.div initial={{ scale: 0.9, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.9, opacity: 0, y: 20 }} className="bg-white w-full max-w-md rounded-[40px] p-8 border-8 border-indigo-50 shadow-2xl text-center">
+              <div className="w-20 h-20 bg-indigo-100 rounded-3xl flex items-center justify-center mx-auto mb-6 rotate-3"><Lock size={40} className="text-indigo-600" /></div>
+              <h2 className="text-2xl font-black text-indigo-900 mb-4">Admin Paneli</h2>
+              <input 
+                type="password" 
+                placeholder="Admin Şifresi" 
+                value={adminPassword}
+                onChange={(e) => setAdminPassword(e.target.value)}
+                className="w-full h-14 rounded-2xl border-2 border-gray-200 px-4 mb-6 text-center font-bold focus:border-indigo-500 focus:outline-none"
+              />
+              {adminPassword === 'osmanli_admin' ? (
+                <button 
+                  onClick={() => {
+                    socket.emit('admin_reset_league', (res: any) => {
+                      if (res.success) {
+                        alert('Lig başarıyla sıfırlandı!');
+                        setShowAdminModal(false);
+                        setAdminPassword('');
+                      }
+                    });
+                  }} 
+                  className="w-full h-14 bg-indigo-600 text-white font-black rounded-2xl shadow-lg hover:bg-indigo-700 transition-all mb-4"
+                >
+                  Ligi Şimdi Sıfırla
+                </button>
+              ) : (
+                <p className="text-sm text-gray-500 font-bold mb-6">Lütfen admin şifresini girin.</p>
+              )}
+              <button onClick={() => { setShowAdminModal(false); setAdminPassword(''); }} className="w-full h-14 bg-gray-100 text-gray-600 font-black rounded-2xl hover:bg-gray-200 transition-colors">Kapat</button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {winnerPopup && (
+          <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+            <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.8, opacity: 0 }} className="bg-gradient-to-b from-yellow-300 to-yellow-500 w-full max-w-md rounded-[40px] p-1 border-8 border-yellow-200 shadow-2xl text-center">
+              <div className="bg-white rounded-[32px] p-8 h-full w-full flex flex-col items-center">
+                <div className="w-24 h-24 bg-yellow-100 rounded-full flex items-center justify-center mb-4 shadow-inner">
+                  <Trophy size={48} className="text-yellow-500" />
+                </div>
+                <h2 className="text-3xl font-black text-gray-800 mb-2 uppercase tracking-tight">LİG ŞAMPİYONU!</h2>
+                <p className="text-gray-500 font-bold mb-6">Önceki ligin {userGrade}. sınıflar birincisi belli oldu!</p>
+                
+                <div className="bg-gray-50 w-full rounded-2xl p-6 mb-8 border-2 border-gray-100 shadow-sm">
+                  <div className="text-4xl font-black text-indigo-600 mb-2">{winnerPopup.name}</div>
+                  <div className="flex items-center justify-center gap-2 text-yellow-500 font-bold text-xl">
+                    <Award size={24} />
+                    <span>{winnerPopup.score} XP</span>
+                  </div>
+                </div>
+                
+                <button onClick={closeWinnerPopup} className="w-full h-14 bg-indigo-600 text-white font-black rounded-2xl shadow-lg hover:bg-indigo-700 transition-all text-lg">
+                  Tebrikler! (Kapat)
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       <main className="relative z-10 max-w-5xl mx-auto px-4 py-6 md:py-10">
         {/* Header */}
         <header className="bg-white/80 backdrop-blur-md rounded-3xl border border-white px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-4 mb-8 shadow-sm">
           <div className="flex items-center gap-3 cursor-pointer group" onClick={() => navigate('home')}>
              <img src="https://lh3.googleusercontent.com/d/1ErIIJdTCjGKwvQ2fdXnWfbzb_-8ALIGe" alt="Osmanlı Secondary School Logo" className="w-12 h-12 object-contain rounded-full shadow-md group-hover:scale-110 transition-transform" referrerPolicy="no-referrer" onError={(e) => { e.currentTarget.src = 'https://drive.google.com/thumbnail?id=1ErIIJdTCjGKwvQ2fdXnWfbzb_-8ALIGe&sz=w500'; }} />
              <span className="font-black text-xl tracking-tighter uppercase text-emerald-900">Osmanlı Secondary School</span>
+             <button onClick={(e) => { e.stopPropagation(); setShowAdminModal(true); }} className="ml-2 text-gray-300 hover:text-indigo-500 transition-colors" title="Admin Paneli">
+               <Lock size={16} />
+             </button>
           </div>
           
           {username && (
@@ -1045,6 +1340,16 @@ export default function App() {
                  <Award size={14} />
                  <span className="text-xs font-black">{totalScore} XP</span>
                </div>
+               <div className="bg-indigo-500 px-4 py-2 rounded-full flex items-center gap-2 shadow-sm text-white" title="Ligin bitimine kalan süre">
+                 <Timer size={14} />
+                 <span className="text-xs font-black">{leagueTimeRemaining}</span>
+               </div>
+               {streak > 0 && (
+                 <div className="bg-amber-400 px-4 py-2 rounded-full flex items-center gap-2 shadow-sm text-amber-900">
+                   <Flame size={14} />
+                   <span className="text-xs font-black">{streak} Gün</span>
+                 </div>
+               )}
             </div>
           )}
         </header>
