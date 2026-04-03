@@ -8,3 +8,4 @@ pinned: false
 ---
 
 # Nexus English App
+*Otomatik senkronizasyon için güncellendi.*
