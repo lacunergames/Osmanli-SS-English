@@ -9,6 +9,7 @@ RUN chown node:node /app
 USER node
 
 # 1. Dependency Layer (Cache-friendly)
+# Cache invalidation trigger: 2026-04-03
 COPY --chown=node:node package*.json ./
 RUN npm install
 
