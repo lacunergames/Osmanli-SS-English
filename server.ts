@@ -55,40 +55,53 @@ async function startServer() {
   async function getLeagueSettings() {
     if (!supabase) return { period: 1, startTime: Date.now() };
     
-    const { data, error } = await supabase
-      .from('leaderboards')
-      .select('league_period, last_activity_date')
-      .eq('student_name', '__SYSTEM__')
-      .eq('grade_level', '0')
-      .single();
-
     const PERIOD_DURATION = 20 * 24 * 60 * 60 * 1000;
     const now = Date.now();
 
-    if (data) {
-      let period = data.league_period || 1;
-      let startTime = parseInt(data.last_activity_date || '0', 10);
-      
-      if (now - startTime >= PERIOD_DURATION) {
-        period += 1;
-        startTime = now;
+    try {
+      const { data, error } = await supabase
+        .from('leaderboards')
+        .select('league_period, last_activity_date')
+        .eq('student_name', '__SYSTEM__')
+        .eq('grade_level', '0')
+        .limit(1);
+
+      if (error) {
+        console.error("Error fetching league settings:", error);
+        return { period: 1, startTime: now };
+      }
+
+      if (data && data.length > 0) {
+        const record = data[0];
+        let period = record.league_period || 1;
+        let startTime = parseInt(record.last_activity_date || '0', 10);
+        
+        if (now - startTime >= PERIOD_DURATION) {
+          period += 1;
+          startTime = now;
+          await supabase
+            .from('leaderboards')
+            .update({ league_period: period, last_activity_date: startTime.toString() })
+            .eq('student_name', '__SYSTEM__')
+            .eq('grade_level', '0');
+          io.emit('league_reset', { startTime, period });
+        }
+        return { period, startTime };
+      } else {
+        // Record doesn't exist, create it
         await supabase
           .from('leaderboards')
-          .update({ league_period: period, last_activity_date: startTime.toString() })
-          .eq('student_name', '__SYSTEM__')
-          .eq('grade_level', '0');
+          .insert([{ 
+            student_name: '__SYSTEM__', 
+            grade_level: '0', 
+            score: 0, 
+            last_activity_date: now.toString(),
+            league_period: 1 
+          }]);
+        return { period: 1, startTime: now };
       }
-      return { period, startTime };
-    } else {
-      await supabase
-        .from('leaderboards')
-        .insert([{ 
-          student_name: '__SYSTEM__', 
-          grade_level: '0', 
-          score: 0, 
-          last_activity_date: now.toString(),
-          league_period: 1 
-        }]);
+    } catch (e) {
+      console.error("Error in getLeagueSettings:", e);
       return { period: 1, startTime: now };
     }
   }
@@ -186,6 +199,17 @@ async function startServer() {
       if (!supabase) return callback({ error: 'Database not initialized' });
       const { data, error } = await supabase
         .from('vocabulary_master')
+        .select('*')
+        .eq('grade_level', grade)
+        .eq('unit_no', unitId)
+        .eq('week_no', weekId);
+      callback({ data, error });
+    });
+
+    socket.on('get_sentences', async ({ grade, unitId, weekId }, callback) => {
+      if (!supabase) return callback({ error: 'Database not initialized' });
+      const { data, error } = await supabase
+        .from('sentences_master')
         .select('*')
         .eq('grade_level', grade)
         .eq('unit_no', unitId)

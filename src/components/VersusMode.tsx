@@ -28,7 +28,7 @@ export default function VersusMode({ username, grade, onBack, onWin }: VersusMod
   const [floatingEmojis, setFloatingEmojis] = useState<{id: number, emoji: string, isMine: boolean}[]>([]);
 
   useEffect(() => {
-    if (currentQuestion && !roundResult && timeLeft > 0) {
+    if (currentQuestion && !roundResult) {
       const timer = setInterval(() => {
         setTimeLeft(prev => {
           if (prev <= 0.1) {
@@ -40,7 +40,7 @@ export default function VersusMode({ username, grade, onBack, onWin }: VersusMod
       }, 100);
       return () => clearInterval(timer);
     }
-  }, [currentQuestion, roundResult, timeLeft]);
+  }, [currentQuestion, roundResult]);
 
   useEffect(() => {
     // Connect to Socket.io server
@@ -108,7 +108,7 @@ export default function VersusMode({ username, grade, onBack, onWin }: VersusMod
     return () => {
       newSocket.disconnect();
     };
-  }, [username, grade, onBack]);
+  }, [username, grade, onBack, onWin]);
 
   const handleAnswer = (answer: string) => {
     if (selectedAnswer || roundResult) return;
@@ -132,10 +132,10 @@ export default function VersusMode({ username, grade, onBack, onWin }: VersusMod
   if (gameState === 'lobby') {
     return (
       <div className="flex flex-col items-center justify-center py-20">
-        <Loader2 className="animate-spin text-emerald-600 mb-6" size={64} />
-        <h2 className="text-3xl font-black text-emerald-900 mb-2">Eşleşme Bekleniyor...</h2>
-        <p className="text-emerald-600 font-bold">Seninle aynı sınıftan bir rakip aranıyor (Sınıf {grade})</p>
-        <button onClick={onBack} className="mt-8 px-6 py-3 bg-white border-2 border-emerald-200 text-emerald-600 font-bold rounded-2xl hover:bg-emerald-50">
+        <Loader2 className="animate-spin text-indigo-600 mb-6" size={64} />
+        <h2 className="text-3xl font-black text-indigo-900 mb-2">Eşleşme Bekleniyor...</h2>
+        <p className="text-indigo-600 font-bold">Seninle aynı sınıftan bir rakip aranıyor (Sınıf {grade})</p>
+        <button onClick={onBack} className="mt-8 px-6 py-3 bg-white border-2 border-indigo-200 text-indigo-600 font-bold rounded-2xl hover:bg-indigo-50">
           İptal Et
         </button>
       </div>
@@ -146,7 +146,7 @@ export default function VersusMode({ username, grade, onBack, onWin }: VersusMod
     const isWinner = scores.me > scores.opponent;
     const isDraw = scores.me === scores.opponent;
     return (
-      <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="max-w-md mx-auto bg-white p-10 rounded-[40px] shadow-2xl text-center border-4 border-emerald-50">
+      <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="max-w-md mx-auto bg-white p-10 rounded-[40px] shadow-2xl text-center border-4 border-indigo-50">
         <div className={`w-24 h-24 mx-auto rounded-full flex items-center justify-center mb-6 ${isWinner ? 'bg-yellow-100 text-yellow-500' : isDraw ? 'bg-gray-100 text-gray-500' : 'bg-red-100 text-red-500'}`}>
           {isWinner ? <Trophy size={48} /> : isDraw ? <Swords size={48} /> : <XCircle size={48} />}
         </div>
@@ -154,14 +154,14 @@ export default function VersusMode({ username, grade, onBack, onWin }: VersusMod
         <div className="flex justify-center gap-8 my-8">
           <div>
             <p className="text-sm font-bold text-gray-400 uppercase">Sen</p>
-            <p className="text-3xl font-black text-emerald-600">{scores.me}</p>
+            <p className="text-3xl font-black text-indigo-600">{scores.me}</p>
           </div>
           <div>
             <p className="text-sm font-bold text-gray-400 uppercase">{opponentName}</p>
             <p className="text-3xl font-black text-orange-500">{scores.opponent}</p>
           </div>
         </div>
-        <button onClick={onBack} className="w-full h-16 bg-emerald-600 text-white font-black rounded-2xl shadow-xl hover:bg-emerald-700">
+        <button onClick={onBack} className="w-full h-16 bg-indigo-600 text-white font-black rounded-2xl shadow-xl hover:bg-indigo-700">
           Ana Menüye Dön
         </button>
       </motion.div>
@@ -212,19 +212,19 @@ export default function VersusMode({ username, grade, onBack, onWin }: VersusMod
 
       {/* Tug of War Bar */}
       <div className="w-full h-3 bg-gray-200 rounded-full overflow-hidden flex mb-4 shadow-inner">
-        <div className="h-full bg-emerald-500 transition-all duration-500" style={{ width: `${myPercentage}%` }} />
+        <div className="h-full bg-indigo-500 transition-all duration-500" style={{ width: `${myPercentage}%` }} />
         <div className="h-full bg-orange-500 transition-all duration-500" style={{ width: `${100 - myPercentage}%` }} />
       </div>
 
       {/* Header */}
-      <div className="flex items-center justify-between bg-white p-4 rounded-2xl shadow-sm border border-emerald-100">
+      <div className="flex items-center justify-between bg-white p-4 rounded-2xl shadow-sm border border-indigo-100">
         <div className="flex items-center gap-4">
-          <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center font-black text-emerald-600 text-xl">
+          <div className="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center font-black text-indigo-600 text-xl">
             {username.charAt(0).toUpperCase()}
           </div>
           <div>
             <p className="text-xs font-bold text-gray-400 uppercase">Sen</p>
-            <p className="font-black text-emerald-900">{scores.me} Puan</p>
+            <p className="font-black text-indigo-900">{scores.me} Puan</p>
           </div>
         </div>
         <div className="text-center">
@@ -243,7 +243,7 @@ export default function VersusMode({ username, grade, onBack, onWin }: VersusMod
       </div>
 
       {/* Game Area */}
-      <div className="bg-white p-8 rounded-[40px] shadow-xl border-4 border-emerald-50 text-center min-h-[400px] flex flex-col justify-center relative overflow-hidden">
+      <div className="bg-white p-8 rounded-[40px] shadow-xl border-4 border-indigo-50 text-center min-h-[400px] flex flex-col justify-center relative overflow-hidden">
         {opponentAnswered && !roundResult && (
           <motion.div 
             initial={{ scale: 0, opacity: 0, y: -50 }} 
@@ -256,29 +256,29 @@ export default function VersusMode({ username, grade, onBack, onWin }: VersusMod
         {currentQuestion ? (
           <motion.div key={currentQuestion.questionNumber} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
             <div className="flex items-center justify-center gap-2 text-3xl font-black mb-2">
-              <Timer className={timeLeft <= 2 ? "text-red-500 animate-pulse" : "text-emerald-600"} size={32} />
-              <span className={timeLeft <= 2 ? "text-red-500" : "text-emerald-600"}>{timeLeft.toFixed(1)}s</span>
+              <Timer className={timeLeft <= 2 ? "text-red-500 animate-pulse" : "text-indigo-600"} size={32} />
+              <span className={timeLeft <= 2 ? "text-red-500" : "text-indigo-600"}>{timeLeft.toFixed(1)}s</span>
             </div>
-            <p className="text-sm font-bold text-emerald-600/60 uppercase tracking-widest mb-6">
+            <p className="text-sm font-bold text-indigo-600/60 uppercase tracking-widest mb-6">
               Soru {currentQuestion.questionNumber} / {currentQuestion.totalQuestions}
               {currentQuestion.isGolden && <span className="ml-2 text-yellow-500 font-black">⭐ ALTIN SORU</span>}
             </p>
-            <h3 className="text-5xl font-black text-emerald-900 mb-12">{currentQuestion.word_en}</h3>
+            <h3 className="text-5xl font-black text-indigo-900 mb-12">{currentQuestion.word_en}</h3>
             
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {currentQuestion.options.map((opt: string, i: number) => {
-                let btnClass = "h-20 bg-white border-4 border-emerald-100 text-emerald-700 font-black text-xl rounded-2xl hover:bg-emerald-50 hover:border-emerald-200 transition-all";
+                let btnClass = "h-20 bg-white border-4 border-indigo-100 text-indigo-700 font-black text-xl rounded-2xl hover:bg-indigo-50 hover:border-indigo-200 transition-all";
                 
                 if (roundResult) {
                   if (opt === roundResult.correctAnswer) {
-                    btnClass = "h-20 bg-emerald-500 border-4 border-emerald-600 text-white font-black text-xl rounded-2xl";
+                    btnClass = "h-20 bg-indigo-500 border-4 border-indigo-600 text-white font-black text-xl rounded-2xl";
                   } else if (opt === selectedAnswer) {
                     btnClass = "h-20 bg-red-500 border-4 border-red-600 text-white font-black text-xl rounded-2xl";
                   } else {
                     btnClass = "h-20 bg-gray-100 border-4 border-gray-200 text-gray-400 font-black text-xl rounded-2xl opacity-50";
                   }
                 } else if (selectedAnswer === opt) {
-                  btnClass = "h-20 bg-emerald-100 border-4 border-emerald-500 text-emerald-800 font-black text-xl rounded-2xl";
+                  btnClass = "h-20 bg-indigo-100 border-4 border-indigo-500 text-indigo-800 font-black text-xl rounded-2xl";
                 }
 
                 return (
@@ -295,7 +295,7 @@ export default function VersusMode({ username, grade, onBack, onWin }: VersusMod
             </div>
 
             {roundResult && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={`mt-8 p-4 rounded-xl font-bold text-lg ${roundResult.answers[socket?.id || '']?.isCorrect ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-800'}`}>
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className={`mt-8 p-4 rounded-xl font-bold text-lg ${roundResult.answers[socket?.id || '']?.isCorrect ? 'bg-indigo-50 text-indigo-800' : 'bg-red-50 text-red-800'}`}>
                 {!roundResult.answers[socket?.id || ''] ? (
                   'Süre bitti! Cevap veremedin. (0 Puan)'
                 ) : roundResult.answers[socket?.id || ''].answer === null ? (
@@ -310,7 +310,7 @@ export default function VersusMode({ username, grade, onBack, onWin }: VersusMod
           </motion.div>
         ) : (
           <div className="flex justify-center">
-            <Loader2 className="animate-spin text-emerald-600" size={48} />
+            <Loader2 className="animate-spin text-indigo-600" size={48} />
           </div>
         )}
       </div>
